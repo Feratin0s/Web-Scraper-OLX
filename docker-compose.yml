@@ -1,0 +1,9 @@
+services:
+  scraper:
+    container_name: OLX_scraper
+    build: .
+    volumes:
+      - ./:/app
+    restart: always
+    environment:
+      - DOCKER_ENV=true
