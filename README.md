@@ -5,11 +5,11 @@ Este projeto é um web scraper que monitora anúncios de produtos na OLX em esta
 ## Funcionalidades
 
 - Busca anúncios de qualquer produto na OLX
-- Filtra por estados específicos (PE, BA, CE, RN, PB, AL, SE, MA, PI)
+- Filtra por estados específicos (PE, BA, CE, RN, PB, AL, SE, MA, SP, RJ, MG, PR, SC, RS, etc..)
 - Detecta novos anúncios e anúncios removidos
 - Identifica reduções de preço nos anúncios
 - Envia notificações via Telegram
-- Executa automaticamente a cada 30 minutos em um container Docker
+- Executa automaticamente a cada 30 minutos em um container Docker, pode alterar em ```schedule.every(30).minutes.do(processar_anuncios) ```
 
 ## Requisitos
 
@@ -28,7 +28,10 @@ TELEGRAM_CHAT_ID=seu_chat_id_aqui
 ```
 
 3. Personalize a busca no arquivo `scraper.py`:
-   - Modifique a variável `URL` para buscar o produto desejado
+   - Modifique a variável `URL` para buscar a URL desejada e coloque Brasil na hora de pesquisar na OLX, por exemplo:
+   ```python
+   URL = "https://www.olx.com.br/brasil?q=carros"
+   ```
    - Ajuste `ESTADOS` para filtrar por regiões específicas
    - Configure `PAGINAS` para definir quantas páginas serão analisadas
 
@@ -66,7 +69,7 @@ O container será executado automaticamente a cada 30 minutos, mantendo o navega
 
 ## Como Funciona
 
-1. O script acessa a OLX e busca pelo produto configurado
+1. O script acessa a OLX e busca pelo produto configurado na URL
 2. Filtra os anúncios pelos estados configurados
 3. Salva os anúncios encontrados em um arquivo JSON
 4. Compara com a execução anterior para identificar:
@@ -74,7 +77,7 @@ O container será executado automaticamente a cada 30 minutos, mantendo o navega
    - Anúncios removidos
    - Anúncios com redução de preço
 5. Envia notificações via Telegram para cada evento
-6. Repete o processo a cada 30 minutos
+6. Repete o processo a cada 30 minutos, definido em ```schedule.every(30).minutes.do(processar_anuncios) ```
 
 ## Notificações Telegram
 
@@ -101,7 +104,7 @@ Para adaptar o scraper para outros produtos:
 
 3. Configure o número de páginas a serem analisadas:
    ```python
-   PAGINAS = 5  # Analisa 5 páginas de resultados
+   PAGINAS = 5  
    ```
 
 ## Solução de Problemas

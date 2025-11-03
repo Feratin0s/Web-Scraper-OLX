@@ -1,6 +1,7 @@
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import json
 import os
@@ -18,6 +19,8 @@ ARQUIVO_ATUAL = "anuncios.json"
 ARQUIVO_ANTERIOR = "anuncios_anterior.json"
 URL = "https://www.olx.com.br/brasil?q=BYD+DOLPHIN+PLUS"
 PAGINAS = 3
+HEADLESS_ENV = os.getenv("HEADLESS", "true").strip().lower()
+HEADLESS = HEADLESS_ENV in {"true", "1", "yes", "y"}
 
 # === CONFIGURAÇÃO TELEGRAM ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -319,13 +322,35 @@ def processar_anuncios():
 # Inicializa o navegador uma única vez
 print("Inicializando o navegador Chrome...")
 options = uc.ChromeOptions()
-options.add_argument("--headless")  # Modo headless para Docker
+if HEADLESS:
+    options.add_argument("--headless=new")  # Modo headless (novo) para ambientes Linux/Docker
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-blink-features=AutomationControlled")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--lang=pt-BR")
 options.add_argument("--disable-gpu")
+options.add_argument(
+    "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36"
+)
 
 # Inicializa o driver globalmente
 driver = uc.Chrome(options=options)
+driver.set_page_load_timeout(60)
+try:
+    # Reduz indícios de automação (uc já trata, mas reforçamos)
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+            """,
+        },
+    )
+except Exception:
+    pass
 
 # Executa imediatamente na primeira vez
 processar_anuncios()
@@ -339,4 +364,4 @@ print("Iniciando loop de monitoramento...")
 while True:
     schedule.run_pending()
     time.sleep(1)
-    print("Esperando 30 minutos...")
+    #print("Esperando 30 minutos...")
