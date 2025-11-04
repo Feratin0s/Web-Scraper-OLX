@@ -1,3 +1,4 @@
+from requests import options
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
@@ -28,6 +29,8 @@ USE_GPU = USE_GPU_ENV in {"true", "1", "yes", "y"}
 # === CONFIGURAÇÃO TELEGRAM ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+erro_404 = False
 
 def enviar_telegram(mensagem, imagem_url=None):
     """Envia mensagem para o Telegram, opcionalmente com uma imagem"""
@@ -122,15 +125,70 @@ def navegar_para(driver, url, timeout=45):
         except Exception:
             pass
 
+def AcessarRemovidos(driver, link):
+    """Acessa o link do anúncio removido para verificar se ainda existe"""
+    navegar_para(driver, link, timeout=10)
+    #<span data-ds-component="DS-Text" class="olx-text olx-text--title-large olx-text--block">A página não foi encontrada...</span>
+    try:
+        elemento = driver.find_element(By.CSS_SELECTOR, "span.olx-text--title-large.olx-text--block")
+        texto = elemento.text.strip()
+        if "não foi encontrada" in texto.lower():
+            return True
+    except:
+        return False
+
+def inicializar_driver():
+    print("Inicializando o navegador Chrome...")
+    options = uc.ChromeOptions()
+    #if HEADLESS:
+        #options.add_argument("--headless=new")  # Modo headless para ambientes Linux/Docker
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--lang=pt-BR")
+    if USE_GPU:
+        options.add_argument("--use-gl=egl")
+        options.add_argument("--enable-gpu-rasterization")
+        options.add_argument("--ignore-gpu-blocklist")
+    else:
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36"
+    )
+    try:
+        options.page_load_strategy = 'eager'
+    except Exception:
+        pass
+
+    driver = uc.Chrome(options=options)
+    driver.set_page_load_timeout(45)
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": """
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt'] });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+                """,
+            },
+        )
+    except Exception:
+        pass
+    return driver
+
 def processar_anuncios():
+    erro_404 = False #Zera o marcador pra cada execução
     """Função principal que executa o scraper da OLX"""
     print(f"[{time.strftime('%d-%m-%Y %H:%M:%S')}] Iniciando processamento de anúncios...")
     
     estados_anuncios = []
     
+    driver = inicializar_driver()
     try:
-        # Reutiliza o driver global
-        global driver
         
         # Acessa a URL principal
         print(f"Acessando {URL}...")
@@ -232,9 +290,13 @@ def processar_anuncios():
                             time.sleep(8)
                     except Exception as e:
                         print(f"Erro ao navegar para a próxima página: {str(e)}")
+                        #Se houver erro ao navegar para a próxima página, não pode rodar removidos
+                        erro_404 = True
                         break
             except Exception as e:
                 print(f"Erro ao processar a página {pagina}: {str(e)}")
+                #Se houver erro ao processar a página, não pode rodar removidos
+                erro_404 = True
                 continue
         
         # Salva anúncios atuais
@@ -279,9 +341,8 @@ def processar_anuncios():
                 removidos_links = links_anteriores - links_atuais
                 
                 # Verificar se os anúncios realmente foram removidos (não apenas mudanças na paginação)
-                # Só notifica se o número de anúncios diminuiu significativamente (mais de 30%)
-                if len(links_anteriores) > 0 and len(links_atuais) < len(links_anteriores) * 0.7:
-                    removidos = [item for item in estados_anterior if item["link"] in removidos_links]
+                if len(links_anteriores) > 0 and len(links_atuais) and not erro_404:
+                    removidos = [item for item in estados_anterior if item["link"] in removidos_links and AcessarRemovidos(driver, item["link"])]
                 else:
                     removidos = []  # Não considera removidos se for apenas mudança na paginação
                 
@@ -363,8 +424,10 @@ def processar_anuncios():
                 traceback.print_exc()
         
         # Salva cópia como anterior para próxima execução
-        with open(ARQUIVO_ANTERIOR, "w", encoding="utf-8") as f:
-            json.dump(estados_anuncios, f, ensure_ascii=False, indent=2)
+        # Pula se houver erro nos removidos
+        if not erro_404:
+            with open(ARQUIVO_ANTERIOR, "w", encoding="utf-8") as f:
+                json.dump(estados_anuncios, f, ensure_ascii=False, indent=2)
         
         print(f"\n[{time.strftime('%d-%m-%Y %H:%M:%S')}] Processamento concluído com sucesso!")
         return True
@@ -373,51 +436,13 @@ def processar_anuncios():
         print(f"Erro crítico: {str(e)}")
         traceback.print_exc()
         return False
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
-# Inicializa o navegador uma única vez
-print("Inicializando o navegador Chrome...")
-options = uc.ChromeOptions()
-if HEADLESS:
-    options.add_argument("--headless=new")  # Modo headless (novo) para ambientes Linux/Docker
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-blink-features=AutomationControlled")
-options.add_argument("--window-size=1920,1080")
-options.add_argument("--lang=pt-BR")
-if USE_GPU:
-    # Ativa uso de GPU dentro do container (NVIDIA), útil para reduzir timeouts de renderização
-    options.add_argument("--use-gl=egl")
-    options.add_argument("--enable-gpu-rasterization")
-    options.add_argument("--ignore-gpu-blocklist")
-else:
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
-options.add_argument("--remote-debugging-port=9222")
-options.add_argument(
-    "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36"
-)
-try:
-    options.page_load_strategy = 'eager'
-except Exception:
-    pass
-
-# Inicializa o driver globalmente
-driver = uc.Chrome(options=options)
-driver.set_page_load_timeout(60)
-try:
-    # Reduz indícios de automação (uc já trata, mas reforçamos)
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt'] });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
-            """,
-        },
-    )
-except Exception:
-    pass
+# Driver agora é criado e encerrado dentro de processar_anuncios()
 
 # Executa imediatamente na primeira vez
 processar_anuncios()
