@@ -127,11 +127,16 @@ def processar_anuncios():
                         except:
                             local = "DESCONHECIDO"
                         
-                        # Tenta extrair a URL da imagem
+                        # Tenta extrair a URL da imagem (source jpeg), com fallback para img
+                        imagem_url = None
                         try:
-                            imagem_url = anuncio.find_element(By.CSS_SELECTOR, "img[class*='olx-adcard__image']").get_attribute("src")
-                        except:
-                            imagem_url = None
+                            source_el = anuncio.find_element(By.CSS_SELECTOR, "source[type='image/jpeg']")
+                            imagem_url = source_el.get_attribute("src") or source_el.get_attribute("srcset")
+                        except Exception:
+                            try:
+                                imagem_url = anuncio.find_element(By.CSS_SELECTOR, "img[class*='olx-adcard__image']").get_attribute("src")
+                            except Exception:
+                                imagem_url = None
                             
                         if local in ESTADOS:
                             item = {
@@ -195,14 +200,15 @@ def processar_anuncios():
             print("\nPrimeira execução - enviando todos os anúncios encontrados...")
             # Envia todos os anúncios na primeira execução
             for anuncio in estados_anuncios:
-                mensagem = f"<b>🚗 ANÚNCIO ENCONTRADO</b>\n\n" \
+                mensagem = f"<b> ANÚNCIO ENCONTRADO</b>\n\n" \
                           f"<b>Título:</b> {anuncio['titulo']}\n" \
                           f"<b>Preço:</b> {anuncio['preco']}\n" \
                           f"<b>Local:</b> {anuncio['estado']}\n" \
                           f"<b>Link:</b> {anuncio['link']}\n" \
                           f"<b>Data:</b> {anuncio['data_coleta']}"
-                
+                #<source srcset="https://img.olx.com.br/thumbs700x500/45/450517687421370.jpg" type="image/jpeg">
                 enviar_telegram(mensagem, anuncio.get('imagem_url'))
+
                 time.sleep(1)  # Pequeno delay para não sobrecarregar a API do Telegram
             
             print(f"\nPrimeira execução — '{ARQUIVO_ANTERIOR}' criado.")
@@ -260,7 +266,7 @@ def processar_anuncios():
                 for novo in novos:
                     print(f"   NOVO: {novo['titulo']} | {novo['preco']} | {novo['estado']}")
                     
-                    mensagem = f"<b>🚗 NOVO ANÚNCIO</b>\n\n" \
+                    mensagem = f"<b> NOVO ANÚNCIO</b>\n\n" \
                               f"<b>Título:</b> {novo['titulo']}\n" \
                               f"<b>Preço:</b> {novo['preco']}\n" \
                               f"<b>Local:</b> {novo['estado']}\n" \
@@ -300,8 +306,8 @@ def processar_anuncios():
                               f"<b>Local:</b> {removido['estado']}\n" \
                               f"<b>Link:</b> {removido['link']}\n" \
                               f"<b>Data coleta:</b> {removido['data_coleta']}"
-                    
-                    enviar_telegram(mensagem, removido.get('imagem_url'))
+                    # Não enviar foto para removidos
+                    enviar_telegram(mensagem)
                     time.sleep(1)  # Pequeno delay para não sobrecarregar a API do Telegram
             except Exception as e:
                 print(f"Erro ao comparar com arquivo anterior: {str(e)}")

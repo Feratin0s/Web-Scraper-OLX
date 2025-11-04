@@ -7,3 +7,4 @@ services:
     restart: always
     environment:
       - DOCKER_ENV=true
+      - TZ=America/Recife
