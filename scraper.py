@@ -2,6 +2,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 import time
 import json
 import os
@@ -21,6 +22,8 @@ URL = "https://www.olx.com.br/brasil?q=BYD+DOLPHIN+PLUS"
 PAGINAS = 3
 HEADLESS_ENV = os.getenv("HEADLESS", "true").strip().lower()
 HEADLESS = HEADLESS_ENV in {"true", "1", "yes", "y"}
+USE_GPU_ENV = os.getenv("USE_GPU", "false").strip().lower()
+USE_GPU = USE_GPU_ENV in {"true", "1", "yes", "y"}
 
 # === CONFIGURAÇÃO TELEGRAM ===
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -79,6 +82,46 @@ def extrair_valor_numerico(preco_texto):
     except:
         return 0
 
+def obter_anuncios_na_pagina(driver, timeout=35):
+    """Localiza os cards de anúncios com espera explícita e seletores alternativos."""
+    wait = WebDriverWait(driver, timeout)
+    try:
+        # Aguarda presença de qualquer card direto
+        wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "section.olx-adcard")))
+        return driver.find_elements(By.CSS_SELECTOR, "section.olx-adcard")
+    except Exception:
+        pass
+
+    # Fallback em possíveis contêineres
+    containers = [
+        "div[class*='adListContainer']",
+        "div[class*='ad-list']",
+        "div[data-ds-component*='AdList']",
+        "main[data-testid='listing-results']",
+    ]
+    for sel in containers:
+        try:
+            cont = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+            )
+            cards = cont.find_elements(By.CSS_SELECTOR, "section.olx-adcard")
+            if cards:
+                return cards
+        except Exception:
+            continue
+    return []
+
+def navegar_para(driver, url, timeout=45):
+    """Navega para a URL com tratamento de Timeout: em caso de timeout, interrompe o carregamento e segue."""
+    try:
+        driver.set_page_load_timeout(timeout)
+        driver.get(url)
+    except TimeoutException:
+        try:
+            driver.execute_script("window.stop();")
+        except Exception:
+            pass
+
 def processar_anuncios():
     """Função principal que executa o scraper da OLX"""
     print(f"[{time.strftime('%d-%m-%Y %H:%M:%S')}] Iniciando processamento de anúncios...")
@@ -91,8 +134,14 @@ def processar_anuncios():
         
         # Acessa a URL principal
         print(f"Acessando {URL}...")
-        driver.get(URL)
-        time.sleep(12)
+        navegar_para(driver, URL, timeout=45)
+        # Espera inicial para garantir que parte do conteúdo carregou
+        WebDriverWait(driver, 30).until(
+            EC.any_of(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "section.olx-adcard")),
+                EC.presence_of_element_located((By.CSS_SELECTOR, "main[data-testid='listing-results']")),
+            )
+        )
         
         # Processamento das páginas
         for pagina in range(1, PAGINAS+1):
@@ -105,9 +154,8 @@ def processar_anuncios():
             time.sleep(6)
             
             try:
-                # Extração dos anúncios
-                container = driver.find_element(By.CSS_SELECTOR, "div[class*='adListContainer']")
-                anuncios = container.find_elements(By.CSS_SELECTOR, "section.olx-adcard")
+                # Extração dos anúncios (espera explícita + seletores robustos)
+                anuncios = obter_anuncios_na_pagina(driver)
                 print(f"\nEncontrados {len(anuncios)} anúncios na página {pagina}!\n")
                 
                 # Processamento de cada anúncio
@@ -157,7 +205,8 @@ def processar_anuncios():
                 if pagina < PAGINAS:
                     try:
                         selectors = [
-                            "//a[contains(text(), 'Próxima página')]"
+                            "//a[contains(text(), 'Próxima página')]",
+                            "a[aria-label*='Próxima']",
                         ]
                         
                         next_button = None
@@ -335,10 +384,22 @@ options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("--window-size=1920,1080")
 options.add_argument("--lang=pt-BR")
-options.add_argument("--disable-gpu")
+if USE_GPU:
+    # Ativa uso de GPU dentro do container (NVIDIA), útil para reduzir timeouts de renderização
+    options.add_argument("--use-gl=egl")
+    options.add_argument("--enable-gpu-rasterization")
+    options.add_argument("--ignore-gpu-blocklist")
+else:
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+options.add_argument("--remote-debugging-port=9222")
 options.add_argument(
     "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36"
 )
+try:
+    options.page_load_strategy = 'eager'
+except Exception:
+    pass
 
 # Inicializa o driver globalmente
 driver = uc.Chrome(options=options)

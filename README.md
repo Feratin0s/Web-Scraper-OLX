@@ -57,6 +57,26 @@ docker-compose up -d
 
 O container será executado automaticamente a cada 30 minutos, mantendo o navegador aberto entre as execuções para maior eficiência.
 
+## GPU NVIDIA (Opcional)
+
+Para aproveitar a GPU NVIDIA dentro do container (melhorando estabilidade de renderização no Chrome headless), siga estes passos:
+
+- Pré-requisitos no host (Linux):
+  - Instale os drivers NVIDIA oficiais.
+  - Instale o NVIDIA Container Toolkit: `sudo apt-get install -y nvidia-container-toolkit`.
+  - Configure o runtime: `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
+
+- Compose e variáveis:
+  - O `docker-compose.yml` já está configurado com `gpus: all` e as variáveis `NVIDIA_VISIBLE_DEVICES=all` e `NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics`.
+  - O scraper lê `USE_GPU=true` para habilitar flags de GPU no Chrome (EGL, rasterização por GPU).
+
+- Executar:
+  - Inicie com `docker-compose up -d`. Garanta que o host veja a GPU com `nvidia-smi`.
+
+- Observações:
+  - Em ambientes sem GPU, deixe `USE_GPU=false` (padrão) e o scraper desativa o GPU no Chrome.
+  - Em Docker, é recomendado aumentar `shm_size` (ex.: 1GB) caso enfrente timeouts do renderer.
+
 ## Estrutura do Projeto
 
 - `scraper.py`: Script principal do web scraper
