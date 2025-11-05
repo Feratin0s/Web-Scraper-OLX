@@ -1,6 +1,7 @@
 services:
   scraper:
     container_name: OLX_scraper
+    shm_size: 1gb
     build: .
     volumes:
       - ./:/app

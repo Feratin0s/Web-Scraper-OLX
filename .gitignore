@@ -1,2 +1,4 @@
 .env
 venv/
+anuncios.json
+anuncios_antigos.json

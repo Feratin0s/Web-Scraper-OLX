@@ -96,12 +96,7 @@ def obter_anuncios_na_pagina(driver, timeout=35):
         pass
 
     # Fallback em possíveis contêineres
-    containers = [
-        "div[class*='adListContainer']",
-        "div[class*='ad-list']",
-        "div[data-ds-component*='AdList']",
-        "main[data-testid='listing-results']",
-    ]
+    containers = ["div[class*='adListContainer']"]
     for sel in containers:
         try:
             cont = WebDriverWait(driver, 10).until(
@@ -140,8 +135,8 @@ def AcessarRemovidos(driver, link):
 def inicializar_driver():
     print("Inicializando o navegador Chrome...")
     options = uc.ChromeOptions()
-    #if HEADLESS:
-        #options.add_argument("--headless=new")  # Modo headless para ambientes Linux/Docker
+    if HEADLESS:
+        options.add_argument("--headless=new")  # Modo headless para ambientes Linux/Docker
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -154,7 +149,6 @@ def inicializar_driver():
     else:
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--remote-debugging-port=9222")
     options.add_argument(
         "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36"
     )
@@ -444,16 +438,25 @@ def processar_anuncios():
 
 # Driver agora é criado e encerrado dentro de processar_anuncios()
 
+def tarefa_agendada():
+    ok = processar_anuncios()
+    if not ok:
+        print("Falha na execução — encerrando processo para reinício do container")
+        try:
+            # Fecha com código de erro para acionar 'restart: always'
+            os._exit(1)
+        except Exception:
+            pass
+
 # Executa imediatamente na primeira vez
-processar_anuncios()
+tarefa_agendada()
 
 # Agenda execuções a cada 30 minutos
 print("Configurando agendamento a cada 30 minutos...")
-schedule.every(30).minutes.do(processar_anuncios)
+schedule.every(30).minutes.do(tarefa_agendada)
 
 # Loop principal de agendamento
 print("Iniciando loop de monitoramento...")
 while True:
     schedule.run_pending()
     time.sleep(1)
-    #print("Esperando 30 minutos...")
